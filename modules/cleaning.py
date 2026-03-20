@@ -1,76 +1,110 @@
-from __future__ import annotations
+import io
+import re
+from typing import Iterable
 
-from shiny import ui
-import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+import pandas as pd
+from shiny import ui
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 
 def _make_unique(names: list[str]) -> list[str]:
-    """
-    Make column names unique after cleaning.
-
-    Example:
-    ['age', 'age', 'age'] -> ['age', 'age_2', 'age_3']
-    """
-    seen = {}
-    unique_names = []
+    """Ensure column names remain unique after cleaning."""
+    seen: dict[str, int] = {}
+    result: list[str] = []
 
     for name in names:
         if name not in seen:
             seen[name] = 1
-            unique_names.append(name)
+            result.append(name)
         else:
             seen[name] += 1
-            unique_names.append(f"{name}_{seen[name]}")
+            result.append(f"{name}_{seen[name]}")
 
-    return unique_names
+    return result
 
 
-def _standardize_column_names(columns) -> list[str]:
-    """
-    Standardize column names so they are easier to work with later.
-    """
-    cleaned = (
-        pd.Index(columns)
-        .astype(str)
-        .str.strip()
-        .str.lower()
-        .str.replace(r"\s+", "_", regex=True)
-        .str.replace(r"[^\w]", "", regex=True)
-        .tolist()
-    )
+def _standardize_single_name(name: str) -> str:
+    """Convert one column name to a clean snake_case style."""
+    name = str(name).strip().lower()
+    name = re.sub(r"[-\s]+", "_", name)
+    name = re.sub(r"[^\w]", "", name)
+    return name
+
+
+def _standardize_column_names(columns: Iterable) -> list[str]:
+    """Standardize a list of column names and keep them unique."""
+    cleaned = [_standardize_single_name(col) for col in columns]
     return _make_unique(cleaned)
 
 
-def _trim_string_values(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Remove leading and trailing spaces from text values
-    without converting missing values into strings.
-    """
-    out = df.copy()
-    text_cols = out.select_dtypes(include=["object", "string"]).columns
+def _build_column_mapping(original_cols: list[str], cleaned_cols: list[str]) -> dict[str, str]:
+    """Map original column names to their standardized versions."""
+    return {str(old): str(new) for old, new in zip(original_cols, cleaned_cols)}
 
-    for col in text_cols:
-        out[col] = out[col].apply(
-            lambda x: x.strip() if isinstance(x, str) else x
-        )
+
+def _map_selected_columns(selected_cols, col_map: dict[str, str], current_cols: list[str]) -> list[str]:
+    """Map UI-selected columns to the dataframe's current column names."""
+    if not selected_cols:
+        return []
+
+    mapped = []
+    current_set = set(current_cols)
+
+    for col in selected_cols:
+        col = str(col)
+
+        if col in current_set:
+            mapped.append(col)
+            continue
+
+        mapped_col = col_map.get(col)
+        if mapped_col in current_set:
+            mapped.append(mapped_col)
+
+    seen = set()
+    unique_mapped = []
+    for col in mapped:
+        if col not in seen:
+            seen.add(col)
+            unique_mapped.append(col)
+
+    return unique_mapped
+
+
+def _trim_string_values(df: pd.DataFrame) -> pd.DataFrame:
+    """Trim leading and trailing whitespace in text columns."""
+    out = df.copy()
+
+    for col in out.select_dtypes(include=["object", "string"]).columns:
+        out[col] = out[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
 
     return out
 
 
 def _missing_summary(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Create a compact column-level missing value summary.
-    """
-    total_missing = df.isna().sum()
-    pct_missing = (total_missing / len(df) * 100).round(2) if len(df) > 0 else 0
+    """Create a column-level summary of missing values."""
+    if df is None:
+        return pd.DataFrame(columns=["column", "missing_count", "missing_pct", "dtype"])
+
+    if df.empty:
+        return pd.DataFrame(
+            {
+                "column": df.columns,
+                "missing_count": [0] * len(df.columns),
+                "missing_pct": [0.0] * len(df.columns),
+                "dtype": [str(dtype) for dtype in df.dtypes],
+            }
+        )
+
+    counts = df.isna().sum()
+    pct = (counts / len(df) * 100).round(2)
 
     summary = pd.DataFrame(
         {
-            "column": total_missing.index,
-            "missing_count": total_missing.values,
-            "missing_pct": pct_missing.values if hasattr(pct_missing, "values") else pct_missing,
+            "column": counts.index,
+            "missing_count": counts.values,
+            "missing_pct": pct.values,
             "dtype": df.dtypes.astype(str).values,
         }
     )
@@ -81,25 +115,38 @@ def _missing_summary(df: pd.DataFrame) -> pd.DataFrame:
     ).reset_index(drop=True)
 
 
-def cleaning_ui():
-    """
-    Build the UI for the data cleaning and preprocessing section.
+def _get_categorical_columns(df: pd.DataFrame) -> list[str]:
+    """Return columns that are suitable for one-hot encoding."""
+    if df is None:
+        return []
 
-    The controls here let users apply common preprocessing steps
-    interactively and inspect the updated dataset right away.
-    """
+    return df.select_dtypes(include=["object", "string", "category"]).columns.tolist()
+
+
+def _get_numeric_columns(df: pd.DataFrame) -> list[str]:
+    """Return numeric columns."""
+    if df is None:
+        return []
+
+    return df.select_dtypes(include=np.number).columns.tolist()
+
+
+def cleaning_ui():
+    """Build the UI for the data cleaning and preprocessing section."""
     return ui.page_fluid(
         ui.layout_columns(
             ui.card(
                 ui.card_header("Cleaning Controls"),
-                ui.p("Choose the preprocessing steps you want to apply."),
-
+                ui.p(
+                    "Select the preprocessing steps to apply. "
+                    "The cleaned output updates automatically after each change."
+                ),
                 ui.accordion(
                     ui.accordion_panel(
-                        "1) Standardization",
+                        "1 · Standardization",
                         ui.input_checkbox(
                             "standardize_names",
-                            "Standardize column names",
+                            "Standardize column names (snake_case)",
                             value=True,
                         ),
                         ui.input_checkbox(
@@ -109,7 +156,7 @@ def cleaning_ui():
                         ),
                     ),
                     ui.accordion_panel(
-                        "2) Duplicates",
+                        "2 · Duplicates",
                         ui.input_checkbox(
                             "remove_duplicates",
                             "Remove duplicate rows",
@@ -117,29 +164,43 @@ def cleaning_ui():
                         ),
                     ),
                     ui.accordion_panel(
-                        "3) Missing Values",
+                        "3 · Missing Values",
                         ui.input_select(
                             "missing_strategy",
-                            "Missing value strategy",
+                            "Strategy",
                             {
                                 "none": "Do nothing",
-                                "drop_rows": "Drop rows with missing values",
-                                "drop_cols": "Drop columns with missing values",
+                                "drop_rows": "Drop rows by missing-value percentage",
+                                "drop_cols": "Drop columns by missing-value percentage",
                                 "mean_mode": "Impute numeric with mean, categorical with mode",
                                 "median_mode": "Impute numeric with median, categorical with mode",
                             },
                             selected="none",
                         ),
+                        ui.input_slider(
+                            "missing_threshold",
+                            "Drop only if missing % exceeds",
+                            min=0,
+                            max=100,
+                            value=0,
+                            step=5,
+                            post="%",
+                        ),
+                        ui.p(
+                            ui.tags.small(
+                                "For drop strategies, a threshold of 0% means any missing value triggers removal."
+                            )
+                        ),
                     ),
                     ui.accordion_panel(
-                        "4) Scaling",
+                        "4 · Scaling",
                         ui.input_select(
                             "scaling_method",
-                            "Scaling method",
+                            "Method",
                             {
                                 "none": "None",
                                 "standard": "Standard scaling (z-score)",
-                                "minmax": "Min-max scaling",
+                                "minmax": "Min-max scaling [0, 1]",
                             },
                             selected="none",
                         ),
@@ -151,26 +212,38 @@ def cleaning_ui():
                         ),
                     ),
                     ui.accordion_panel(
-                        "5) Encoding",
+                        "5 · Encoding",
                         ui.input_checkbox(
                             "encode_categorical",
                             "One-hot encode categorical columns",
                             value=False,
                         ),
+                        ui.input_selectize(
+                            "encode_cols",
+                            "Columns to encode (leave blank = all categorical)",
+                            choices=[],
+                            multiple=True,
+                        ),
                     ),
                     ui.accordion_panel(
-                        "6) Outliers",
+                        "6 · Outliers",
                         ui.input_checkbox(
                             "handle_outliers",
-                            "Handle outliers with IQR",
+                            "Handle outliers with the IQR rule",
                             value=False,
+                        ),
+                        ui.input_selectize(
+                            "outlier_cols",
+                            "Numeric columns to check (leave blank = all numeric)",
+                            choices=[],
+                            multiple=True,
                         ),
                         ui.input_select(
                             "outlier_action",
-                            "Outlier strategy",
+                            "Strategy",
                             {
-                                "remove": "Remove rows with outliers",
-                                "cap": "Cap outliers",
+                                "cap": "Cap outliers to the IQR fences",
+                                "remove": "Remove rows containing outliers",
                             },
                             selected="cap",
                         ),
@@ -183,43 +256,53 @@ def cleaning_ui():
                             step=0.1,
                         ),
                     ),
+                    open=False,
                 ),
-
                 ui.hr(),
-                ui.download_button("download_cleaned", "Download Cleaned Data"),
+                ui.download_button("download_cleaned", "Download Cleaned CSV"),
                 full_screen=False,
             ),
-
             ui.card(
                 ui.card_header("Before vs After Overview"),
                 ui.layout_columns(
                     ui.value_box("Original rows", ui.output_text("raw_rows")),
                     ui.value_box("Cleaned rows", ui.output_text("clean_rows")),
+                    ui.value_box("Rows removed", ui.output_text("rows_removed")),
+                    ui.value_box("Original columns", ui.output_text("raw_cols")),
+                    ui.value_box("Cleaned columns", ui.output_text("clean_cols")),
                     ui.value_box("Original missing", ui.output_text("raw_missing")),
                     ui.value_box("Cleaned missing", ui.output_text("clean_missing")),
                     ui.value_box("Original duplicates", ui.output_text("raw_dupes")),
                     ui.value_box("Cleaned duplicates", ui.output_text("clean_dupes")),
-                    col_widths=[4, 4, 4, 4, 4, 4],
+                    col_widths=[4, 4, 4, 4, 4, 4, 4, 4, 4],
                 ),
                 full_screen=False,
             ),
             col_widths=[4, 8],
         ),
-
         ui.layout_columns(
             ui.card(
-                ui.card_header("Applied Operations"),
+                ui.card_header("Applied Operations Log"),
                 ui.output_text_verbatim("cleaning_summary"),
                 full_screen=True,
             ),
             ui.card(
-                ui.card_header("Missing Value Summary (Original Data)"),
-                ui.output_data_frame("missing_table"),
+                ui.card_header("Missing Value Summary"),
+                ui.layout_columns(
+                    ui.card(
+                        ui.card_header("Original"),
+                        ui.output_data_frame("missing_table_original"),
+                    ),
+                    ui.card(
+                        ui.card_header("After Cleaning"),
+                        ui.output_data_frame("missing_table_cleaned"),
+                    ),
+                    col_widths=[6, 6],
+                ),
                 full_screen=True,
             ),
-            col_widths=[5, 7],
+            col_widths=[4, 8],
         ),
-
         ui.layout_columns(
             ui.card(
                 ui.card_header("Cleaned Data Preview"),
@@ -233,141 +316,174 @@ def cleaning_ui():
 
 def apply_cleaning(df: pd.DataFrame, input) -> tuple[pd.DataFrame | None, list[str]]:
     """
-    Apply the selected cleaning and preprocessing steps.
+    Apply user-selected cleaning and preprocessing steps.
 
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Original dataset.
-
-    input : Shiny input object
-        User-selected options from the UI.
-
-    Returns
-    -------
-    cleaned_df : pandas.DataFrame | None
-        Dataset after cleaning and preprocessing.
-
-    log : list[str]
-        A readable summary of what was applied.
+    Returns a cleaned dataset together with a step-by-step log
+    describing what was applied or skipped.
     """
     if df is None:
         return None, ["No dataset loaded."]
 
     cleaned = df.copy()
-    log = []
+    log: list[str] = []
 
-    # Standardize column names
+    original_cols = [str(col) for col in cleaned.columns]
+    col_map = {col: col for col in original_cols}
+
     if input.standardize_names():
-        old_names = list(cleaned.columns)
-        new_names = _standardize_column_names(old_names)
-        cleaned.columns = new_names
+        new_cols = _standardize_column_names(original_cols)
+        col_map = _build_column_mapping(original_cols, new_cols)
+        cleaned.columns = new_cols
 
-        if old_names != new_names:
-            log.append("Standardized column names.")
+        renamed_count = sum(old != new for old, new in zip(original_cols, new_cols))
+        if renamed_count > 0:
+            log.append(f"Standardized column names ({renamed_count} column(s) renamed).")
         else:
             log.append("Column names were already clean.")
+    else:
+        log.append("Column-name standardization skipped.")
 
-    # Trim whitespace in text fields
     if input.trim_strings():
         cleaned = _trim_string_values(cleaned)
-        log.append("Trimmed whitespace in text columns.")
+        log.append("Trimmed leading and trailing whitespace in text columns.")
+    else:
+        log.append("Whitespace trimming skipped.")
 
-    # Remove duplicates
     if input.remove_duplicates():
         before = len(cleaned)
         cleaned = cleaned.drop_duplicates()
         removed = before - len(cleaned)
         log.append(f"Removed {removed} duplicate row(s).")
+    else:
+        log.append("Duplicate removal skipped.")
 
-    # Handle missing values
     strategy = input.missing_strategy()
+    threshold = float(input.missing_threshold()) / 100.0
 
     if strategy == "drop_rows":
+        row_missing_pct = cleaned.isna().mean(axis=1)
         before = len(cleaned)
-        cleaned = cleaned.dropna()
+        cleaned = cleaned.loc[row_missing_pct <= threshold].copy()
         removed = before - len(cleaned)
-        log.append(f"Dropped {removed} row(s) with missing values.")
+        log.append(
+            f"Dropped {removed} row(s) with missing-value percentage above {input.missing_threshold()}%."
+        )
 
     elif strategy == "drop_cols":
-        before = cleaned.shape[1]
-        cleaned = cleaned.dropna(axis=1)
-        removed = before - cleaned.shape[1]
-        log.append(f"Dropped {removed} column(s) with missing values.")
+        col_missing_pct = cleaned.isna().mean(axis=0)
+        before_cols = cleaned.shape[1]
+        cleaned = cleaned.loc[:, col_missing_pct <= threshold].copy()
+        removed = before_cols - cleaned.shape[1]
+        col_map = {k: v for k, v in col_map.items() if v in cleaned.columns}
+
+        log.append(
+            f"Dropped {removed} column(s) with missing-value percentage above {input.missing_threshold()}%."
+        )
 
     elif strategy in {"mean_mode", "median_mode"}:
-        numeric_cols = cleaned.select_dtypes(include=np.number).columns
-        categorical_cols = cleaned.select_dtypes(exclude=np.number).columns
+        numeric_cols = _get_numeric_columns(cleaned)
+        categorical_cols = _get_categorical_columns(cleaned)
+
+        imputed_num = 0
+        imputed_cat = 0
+        use_mean = strategy == "mean_mode"
 
         for col in numeric_cols:
             if cleaned[col].isna().any():
-                fill_value = (
-                    cleaned[col].mean()
-                    if strategy == "mean_mode"
-                    else cleaned[col].median()
-                )
+                fill_value = cleaned[col].mean() if use_mean else cleaned[col].median()
                 cleaned[col] = cleaned[col].fillna(fill_value)
+                imputed_num += 1
 
         for col in categorical_cols:
             if cleaned[col].isna().any():
-                mode_series = cleaned[col].mode(dropna=True)
-                if not mode_series.empty:
-                    cleaned[col] = cleaned[col].fillna(mode_series.iloc[0])
+                mode_vals = cleaned[col].mode(dropna=True)
+                if not mode_vals.empty:
+                    cleaned[col] = cleaned[col].fillna(mode_vals.iloc[0])
+                    imputed_cat += 1
 
-        if strategy == "mean_mode":
-            log.append(
-                "Imputed missing values using mean for numeric columns and mode for categorical columns."
-            )
-        else:
-            log.append(
-                "Imputed missing values using median for numeric columns and mode for categorical columns."
-            )
+        method_label = "mean" if use_mean else "median"
+        log.append(
+            f"Imputed {imputed_num} numeric column(s) with {method_label} and "
+            f"{imputed_cat} categorical column(s) with mode."
+        )
 
     else:
         log.append("Missing values left unchanged.")
 
-    # Scale numeric columns
     scaling_method = input.scaling_method()
-    selected_scale_cols = input.scale_cols()
+    selected_scale_cols = _map_selected_columns(
+        input.scale_cols(),
+        col_map,
+        cleaned.columns.tolist(),
+    )
 
     if scaling_method != "none" and selected_scale_cols:
         valid_cols = [
             col for col in selected_scale_cols
-            if col in cleaned.columns and pd.api.types.is_numeric_dtype(cleaned[col])
+            if pd.api.types.is_numeric_dtype(cleaned[col])
         ]
 
         if valid_cols:
             scaler = StandardScaler() if scaling_method == "standard" else MinMaxScaler()
             cleaned[valid_cols] = scaler.fit_transform(cleaned[valid_cols])
-            log.append(f"Applied {scaling_method} scaling to: {', '.join(valid_cols)}.")
-        else:
-            log.append("No valid numeric columns were selected for scaling.")
 
-    # One-hot encode categorical features
+            scale_label = (
+                "standard scaling (z-score)"
+                if scaling_method == "standard"
+                else "min-max scaling"
+            )
+            log.append(f"Applied {scale_label} to: {', '.join(valid_cols)}.")
+        else:
+            log.append("Scaling skipped because no valid numeric columns were selected.")
+    elif scaling_method == "none":
+        log.append("Scaling skipped.")
+    else:
+        log.append("Scaling method selected, but no columns were chosen.")
+
     if input.encode_categorical():
-        cat_cols = cleaned.select_dtypes(
-            include=["object", "string", "category", "bool"]
-        ).columns.tolist()
+        selected_encode_cols = _map_selected_columns(
+            input.encode_cols(),
+            col_map,
+            cleaned.columns.tolist(),
+        )
+
+        if selected_encode_cols:
+            categorical_now = set(_get_categorical_columns(cleaned))
+            cat_cols = [col for col in selected_encode_cols if col in categorical_now]
+        else:
+            cat_cols = _get_categorical_columns(cleaned)
 
         if cat_cols:
             cleaned = pd.get_dummies(cleaned, columns=cat_cols, drop_first=False)
             log.append(
-                f"Applied one-hot encoding to {len(cat_cols)} categorical column(s)."
+                f"One-hot encoded {len(cat_cols)} categorical column(s): {', '.join(cat_cols)}."
             )
         else:
-            log.append("No categorical columns were available for encoding.")
+            log.append("Encoding skipped because no eligible categorical columns were found.")
+    else:
+        log.append("Categorical encoding skipped.")
 
-    # Handle outliers using IQR
     if input.handle_outliers():
-        numeric_cols = cleaned.select_dtypes(include=np.number).columns.tolist()
         multiplier = float(input.iqr_multiplier())
+        selected_outlier_cols = _map_selected_columns(
+            input.outlier_cols(),
+            col_map,
+            cleaned.columns.tolist(),
+        )
 
-        if numeric_cols:
-            if input.outlier_action() == "remove":
-                before = len(cleaned)
+        numeric_candidates = _get_numeric_columns(cleaned)
+        target_cols = selected_outlier_cols if selected_outlier_cols else numeric_candidates
+        target_cols = [col for col in target_cols if col in numeric_candidates]
+
+        if not target_cols:
+            log.append("Outlier handling skipped because no numeric columns were available.")
+        else:
+            action = input.outlier_action()
+
+            if action == "remove":
                 mask = pd.Series(True, index=cleaned.index)
 
-                for col in numeric_cols:
+                for col in target_cols:
                     q1 = cleaned[col].quantile(0.25)
                     q3 = cleaned[col].quantile(0.75)
                     iqr = q3 - q1
@@ -379,14 +495,17 @@ def apply_cleaning(df: pd.DataFrame, input) -> tuple[pd.DataFrame | None, list[s
                     upper = q3 + multiplier * iqr
                     mask &= cleaned[col].between(lower, upper, inclusive="both")
 
+                before = len(cleaned)
                 cleaned = cleaned.loc[mask].copy()
                 removed = before - len(cleaned)
-                log.append(f"Removed {removed} row(s) containing IQR-based outliers.")
+                log.append(
+                    f"Removed {removed} row(s) containing IQR-based outliers in: {', '.join(target_cols)}."
+                )
 
             else:
                 capped_cols = 0
 
-                for col in numeric_cols:
+                for col in target_cols:
                     q1 = cleaned[col].quantile(0.25)
                     q3 = cleaned[col].quantile(0.75)
                     iqr = q3 - q1
@@ -400,24 +519,38 @@ def apply_cleaning(df: pd.DataFrame, input) -> tuple[pd.DataFrame | None, list[s
                     capped_cols += 1
 
                 log.append(
-                    f"Capped outliers using the IQR rule on {capped_cols} numeric column(s)."
+                    f"Capped outliers using the IQR rule on {capped_cols} column(s): {', '.join(target_cols)}."
                 )
-        else:
-            log.append("Outlier handling skipped because no numeric columns were available.")
+    else:
+        log.append("Outlier handling skipped.")
 
     log.append(
-        f"Final dataset shape: {cleaned.shape[0]} row(s) × {cleaned.shape[1]} column(s)."
+        f"Final dataset shape: {cleaned.shape[0]:,} row(s) × {cleaned.shape[1]:,} column(s)."
     )
 
     return cleaned, log
 
 
 def build_missing_summary(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Return a table summarizing missing values by column.
-    """
-    if df is None:
-        return pd.DataFrame(
-            columns=["column", "missing_count", "missing_pct", "dtype"]
-        )
+    """Return a column-level missing-value summary table."""
     return _missing_summary(df)
+
+
+def cleaning_download_handler(cleaned_df: pd.DataFrame):
+    """Convert the cleaned dataframe to downloadable CSV bytes."""
+    if cleaned_df is None:
+        return b""
+
+    buffer = io.StringIO()
+    cleaned_df.to_csv(buffer, index=False)
+    return buffer.getvalue().encode("utf-8")
+
+
+def get_numeric_columns(df: pd.DataFrame) -> list[str]:
+    """Return numeric columns for UI selection controls."""
+    return _get_numeric_columns(df)
+
+
+def get_categorical_columns(df: pd.DataFrame) -> list[str]:
+    """Return categorical columns for UI selection controls."""
+    return _get_categorical_columns(df)
