@@ -1,6 +1,6 @@
 from shiny import App, reactive, render, ui
 from modules.data_loader import load_data, upload_ui
-
+from modules.cleaning import apply_cleaning, cleaning_ui
 
 custom_css = """
 body {
@@ -110,15 +110,7 @@ navbar_content = ui.page_navbar(
     ),
     ui.nav_panel(
         "Cleaning",
-        ui.div(
-            {"class": "main-container"},
-            ui.h2("Data Cleaning", {"class": "section-title"}),
-            ui.div(
-                {"class": "placeholder-box"},
-                ui.p("This section will be implemented by Person B."),
-                ui.p("Suggested features: missing value handling, duplicate removal, type conversion, and outlier treatment.")
-            )
-        )
+        cleaning_ui()
     ),
     ui.nav_panel(
         "Feature Engineering",
@@ -161,6 +153,11 @@ def server(input, output, session):
         file_info = input.file_upload()
         return load_data(file_info)
 
+    @reactive.calc
+    def cleaned_result():
+        df = dataset()
+        return apply_cleaning(df, input)
+
     @output
     @render.text
     def upload_status():
@@ -176,6 +173,123 @@ def server(input, output, session):
         if df is None:
             return None
         return df.head()
+
+
+    
+    @output
+    @render.text
+    def cleaning_summary():
+        cleaned_df, log = cleaned_result()
+        if log is None:
+            return "No cleaning steps applied."
+        return "\n".join(log)
+
+
+    @output
+    @render.data_frame
+    def missing_table_original():
+        df = dataset()
+        if df is None:
+            return None
+
+        missing = df.isna().sum().to_frame(name="missing_count")
+        missing["missing_pct"] = missing["missing_count"] / len(df)
+        return missing
+
+
+    @output
+    @render.data_frame
+    def missing_table_cleaned():
+        cleaned_df, log = cleaned_result()
+        if cleaned_df is None:
+            return None
+
+        missing = cleaned_df.isna().sum().to_frame(name="missing_count")
+        missing["missing_pct"] = missing["missing_count"] / len(cleaned_df)
+        return missing
+
+
+    @output
+    @render.data_frame
+    def cleaned_preview():
+        cleaned_df, log = cleaned_result()
+        if cleaned_df is None:
+            return None
+        return cleaned_df.head()
+    
+    @output
+    @render.text
+    def raw_rows():
+        df = dataset()
+        if df is None:
+            return "-"
+        return str(df.shape[0])
+
+    @output
+    @render.text
+    def clean_rows():
+        cleaned_df, log = cleaned_result()
+        if cleaned_df is None:
+            return "-"
+        return str(cleaned_df.shape[0])
+
+    @output
+    @render.text
+    def rows_removed():
+        df = dataset()
+        cleaned_df, log = cleaned_result()
+        if df is None or cleaned_df is None:
+            return "-"
+        return str(df.shape[0] - cleaned_df.shape[0])
+
+    @output
+    @render.text
+    def raw_cols():
+        df = dataset()
+        if df is None:
+            return "-"
+        return str(df.shape[1])
+
+    @output
+    @render.text
+    def clean_cols():
+        cleaned_df, log = cleaned_result()
+        if cleaned_df is None:
+            return "-"
+        return str(cleaned_df.shape[1])
+
+    @output
+    @render.text
+    def raw_missing():
+        df = dataset()
+        if df is None:
+            return "-"
+        return str(int(df.isna().sum().sum()))
+
+    @output
+    @render.text
+    def clean_missing():
+        cleaned_df, log = cleaned_result()
+        if cleaned_df is None:
+            return "-"
+        return str(int(cleaned_df.isna().sum().sum()))
+
+    @output
+    @render.text
+    def raw_dupes():
+        df = dataset()
+        if df is None:
+            return "-"
+        return str(int(df.duplicated().sum()))
+
+    @output
+    @render.text
+    def clean_dupes():
+        cleaned_df, log = cleaned_result()
+        if cleaned_df is None:
+            return "-"
+        return str(int(cleaned_df.duplicated().sum()))
+    
 
 
 app = App(app_ui, server)
