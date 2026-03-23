@@ -1,6 +1,10 @@
 from shiny import App, reactive, render, ui
 from modules.data_loader import load_data, upload_ui
 from modules.cleaning import apply_cleaning, cleaning_ui
+
+#new:
+from modules.eda import eda_ui, eda_server
+
 from modules.feature_engineering import (
     map_rule_ui, map_rule_server,
     binning_ui, binning_server,
@@ -140,6 +144,34 @@ body {
     min-width: 0;
     flex: 1;
 }
+.eda-var-group {
+    margin-bottom: 18px;
+}
+
+.eda-var-checkboxes {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.eda-var-option .form-check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+}
+
+.eda-var-option .form-check-input {
+    margin: 0 !important;
+    flex-shrink: 0;
+}
+
+.eda-var-option .form-check-label {
+    margin: 0 !important;
+    line-height: 1.4;
+    word-break: break-word;
+}
 """
 
 navbar_content = ui.page_navbar(
@@ -193,17 +225,9 @@ navbar_content = ui.page_navbar(
         )
     ),
     ui.nav_panel(
-        "EDA",
-        ui.div(
-            {"class": "main-container"},
-            ui.h2("Exploratory Data Analysis", {"class": "section-title"}),
-            ui.div(
-                {"class": "placeholder-box"},
-                ui.p("This section will be implemented by Person D."),
-                ui.p("Suggested features: summary statistics, histograms, scatter plots, boxplots, and correlation analysis.")
-            )
-        )
-    ),
+    "EDA",
+    eda_ui()),
+
     title="Project 2 Data App",
 )
 
@@ -238,6 +262,16 @@ def server(input, output, session):
     map_rule_result = map_rule_server("map_rule", data=cleaned_df)
     binning_result  = binning_server("binning",   data=map_rule_result)
     ohe_result      = ohe_server("ohe",           data=binning_result)
+
+    # new:
+    eda_server(
+        input=input,
+        output=output,
+        session=session,
+        raw_data=dataset,
+        cleaned_data=cleaned_df,
+        fe_data=ohe_result,
+    )
 
     @output
     @render.data_frame
