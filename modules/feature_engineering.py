@@ -74,22 +74,7 @@ def map_rule_ui():
             col_widths=[3, 2, 2, 5]
         ),
 
-        ui.layout_columns(
-            ui.div(
-                ui.output_ui("hist_label"),
-                ui.output_plot("hist_preview"),
-            ),
-            ui.div(
-                ui.tags.label("Preview bins", {"class": "input-label"}),
-                ui.input_radio_buttons(
-                    "hist_bins", None,
-                    choices={"5": "5", "20": "20", "50": "50", "100": "100"},
-                    selected="20",
-                    inline=True,
-                ),
-            ),
-            col_widths=[6, 6],
-        ),
+        ui.output_ui("hist_section"),
 
         ui.layout_columns(
             ui.div(
@@ -302,11 +287,26 @@ def map_rule_server(input, output, session, data):
 
     @output
     @render.ui
-    def hist_label():
+    def hist_section():
         col = input.field_menu()
-        if col:
-            return ui.div("Field histogram")
-        return ui.div("A histogram of your selected field will be shown here.")
+        if not col:
+            return ui.div()
+        return ui.layout_columns(
+            ui.div(
+                ui.tags.label("Field histogram", {"class": "input-label"}),
+                ui.output_plot("hist_preview"),
+            ),
+            ui.div(
+                ui.tags.label("Preview bins", {"class": "input-label"}),
+                ui.input_radio_buttons(
+                    "hist_bins", None,
+                    choices={"5": "5", "20": "20", "50": "50", "100": "100"},
+                    selected="20",
+                    inline=True,
+                ),
+            ),
+            col_widths=[6, 6],
+        )
 
     @output
     @render.plot
@@ -360,22 +360,7 @@ def binning_ui():
             ),
             col_widths=[6, 6],
         ),
-        ui.layout_columns(
-            ui.div(
-                ui.output_ui("hist_label"),
-                ui.output_plot("hist_preview"),
-            ),
-            ui.div(
-                ui.tags.label("Preview bins", {"class": "input-label"}),
-                ui.input_radio_buttons(
-                    "hist_bins", None,
-                    choices={"5": "5", "20": "20", "50": "50", "100": "100"},
-                    selected="20",
-                    inline=True,
-                ),
-            ),
-            col_widths=[6, 6],
-        ),
+        ui.output_ui("hist_section"),
         ui.div(
             ui.tags.label("Cutoffs (comma-separated)", {"class": "input-label"}),
             ui.input_text("cutoff_input", None, placeholder="e.g. 20,30,40,50"),
@@ -563,11 +548,26 @@ def binning_server(input, output, session, data):
 
     @output
     @render.ui
-    def hist_label():
+    def hist_section():
         col = input.field_menu()
-        if col:
-            return ui.div("Field histogram")
-        return ui.div("A histogram of your selected field will be shown here.")
+        if not col:
+            return ui.div()
+        return ui.layout_columns(
+            ui.div(
+                ui.tags.label("Field histogram", {"class": "input-label"}),
+                ui.output_plot("hist_preview"),
+            ),
+            ui.div(
+                ui.tags.label("Preview bins", {"class": "input-label"}),
+                ui.input_radio_buttons(
+                    "hist_bins", None,
+                    choices={"5": "5", "20": "20", "50": "50", "100": "100"},
+                    selected="20",
+                    inline=True,
+                ),
+            ),
+            col_widths=[6, 6],
+        )
 
     @output
     @render.plot
@@ -615,6 +615,7 @@ def ohe_ui():
             ui.div(
                 ui.tags.label("Field", {"class": "input-label"}),
                 ui.input_selectize("field_menu", None, choices=[], multiple=False),
+                ui.output_ui("unique_count"),
             ),
             col_widths=[12],
         ),
@@ -662,6 +663,19 @@ def ohe_server(input, output, session, data):
             choices={"": "— select a field —", **{c: c for c in all_cols}},
             selected="",
             session=session
+        )
+
+    @output
+    @render.ui
+    def unique_count():
+        df = data()
+        col = input.field_menu()
+        if df is None or not col or col not in df.columns:
+            return ui.span("")
+        n = df[col].dropna().nunique()
+        return ui.span(
+            f"{n} unique values",
+            {"style": "font-size: 12px; color: gray;"},
         )
 
     # Validate and record operation
