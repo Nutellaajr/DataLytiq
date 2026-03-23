@@ -2,6 +2,19 @@ from shiny import ui
 import pandas as pd
 import os
 
+
+def _normalize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert all non-numeric, non-boolean columns to string, preserving NA."""
+    for col in df.columns:
+        dtype = df[col].dtype
+        if pd.api.types.is_bool_dtype(dtype) or pd.api.types.is_numeric_dtype(dtype):
+            continue
+        na_mask = df[col].isna()
+        df[col] = df[col].astype(str)
+        df[col] = df[col].where(~na_mask, other=pd.NA)
+    return df
+
+
 def load_data(file_info):
     """
     Read uploaded file into a pandas DataFrame.
@@ -15,13 +28,14 @@ def load_data(file_info):
 
     try:
         if file_name.endswith(".csv"):
-            return pd.read_csv(file_path)
+            df = pd.read_csv(file_path)
         elif file_name.endswith(".xlsx") or file_name.endswith(".xls"):
-            return pd.read_excel(file_path)
+            df = pd.read_excel(file_path)
         elif file_name.endswith(".json"):
-            return pd.read_json(file_path)
+            df = pd.read_json(file_path)
         else:
             return None
+        return _normalize_dtypes(df)
     except Exception:
         return None
 
@@ -31,7 +45,7 @@ def load_default_data():
     """
     file_path = os.path.join(os.getcwd(), "iris_data.csv")
     try:
-        return pd.read_csv(file_path)
+        return _normalize_dtypes(pd.read_csv(file_path))
     except Exception:
         return None
 

@@ -54,7 +54,7 @@ def map_rule_ui():
         ui.layout_columns(
             ui.div(
                 ui.tags.label("Field", {"class": "input-label"}),
-                ui.input_select("field_menu", None, choices=[]),
+                ui.input_selectize("field_menu", None, choices=[], multiple=False),
             ),
             ui.div(
                 ui.tags.label("Operator", {"class": "input-label"}),
@@ -149,12 +149,10 @@ def map_rule_server(input, output, session, data):
 
         numeric_cols = df.select_dtypes(include="number").columns.tolist()
 
-        selected_col = numeric_cols[0] if numeric_cols else None
-
         ui.update_select(
             "field_menu",
-            choices=numeric_cols,
-            selected=selected_col,
+            choices={"": "— select a field —", **{c: c for c in numeric_cols}},
+            selected="",
             session=session
         )
 
@@ -313,7 +311,7 @@ def binning_ui():
         ui.layout_columns(
             ui.div(
                 ui.tags.label("Field", {"class": "input-label"}),
-                ui.input_select("field_menu", None, choices=[]),
+                ui.input_selectize("field_menu", None, choices=[], multiple=False),
             ),
             ui.div(
                 ui.tags.label("Range", {"class": "input-label"}),
@@ -383,7 +381,12 @@ def binning_server(input, output, session, data):
         if df is None:
             return
         num_cols = df.select_dtypes(include="number").columns.tolist()
-        ui.update_select("field_menu", choices=num_cols, session=session)
+        ui.update_select(
+            "field_menu",
+            choices={"": "— select a field —", **{c: c for c in num_cols}},
+            selected="",
+            session=session
+        )
 
     # Show min / max
     @output
@@ -531,7 +534,7 @@ def ohe_ui():
         ui.layout_columns(
             ui.div(
                 ui.tags.label("Field", {"class": "input-label"}),
-                ui.input_select("field_menu", None, choices=[]),
+                ui.input_selectize("field_menu", None, choices=[], multiple=False),
             ),
             col_widths=[12],
         ),
@@ -573,7 +576,13 @@ def ohe_server(input, output, session, data):
         df = data()
         if df is None:
             return
-        ui.update_select("field_menu", choices=df.columns.tolist(), session=session)
+        all_cols = df.columns.tolist()
+        ui.update_select(
+            "field_menu",
+            choices={"": "— select a field —", **{c: c for c in all_cols}},
+            selected="",
+            session=session
+        )
 
     # Validate and record operation
     @reactive.effect

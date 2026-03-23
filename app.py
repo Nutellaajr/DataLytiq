@@ -346,10 +346,47 @@ def server(input, output, session):
 
         return None
 
+    confirmed_filter_rules: reactive.Value = reactive.Value([])
+
+    @reactive.effect
+    @reactive.event(input.add_filter_rule)
+    def _on_add_filter_rule():
+        col = input.filter_col()
+        values_raw = input.filter_values()
+
+        if not col or not values_raw.strip():
+            return
+
+        drop_vals = sorted({v.strip() for v in values_raw.split(",") if v.strip()})
+        if not drop_vals:
+            return
+
+        label = f"Dropped {', '.join(drop_vals)} from {col}"
+        rule = {"col": col, "values": set(drop_vals), "label": label}
+        confirmed_filter_rules.set(confirmed_filter_rules.get() + [rule])
+
+    @output
+    @render.ui
+    def filter_rules_list():
+        rules = confirmed_filter_rules.get()
+        if not rules:
+            return ui.div()
+        return ui.div(
+            {"style": "margin-top: 10px; width: 100%;"},
+            ui.tags.label("Active Rules"),
+            *[
+                ui.div(
+                    {"style": "display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 4px;"},
+                    ui.input_checkbox(f"filter_rule_{i}", rules[i]["label"], value=True),
+                )
+                for i in range(len(rules))
+            ],
+        )
+
     @reactive.calc
     def cleaned_result():
         df = dataset()
-        return apply_cleaning(df, input)
+        return apply_cleaning(df, input, filter_rules=confirmed_filter_rules.get())
 
     @reactive.calc
     def cleaned_df():
@@ -368,6 +405,7 @@ def server(input, output, session):
             ui.update_selectize("encode_cols", choices=[], selected=[])
             ui.update_selectize("log_cols", choices=[], selected=[])
             ui.update_selectize("outlier_cols", choices=[], selected=[])
+            ui.update_selectize("filter_col", choices=[], selected=[])
             return
 
         numeric_cols = get_numeric_columns(df)
@@ -377,6 +415,7 @@ def server(input, output, session):
         ui.update_selectize("encode_cols", choices=categorical_cols, selected=[])
         ui.update_selectize("log_cols", choices=numeric_cols, selected=[])
         ui.update_selectize("outlier_cols", choices=numeric_cols, selected=[])
+        ui.update_selectize("filter_col", choices=df.columns.tolist(), selected=[])
 
     map_rule_result = map_rule_server("map_rule", data=cleaned_df)
     binning_result = binning_server("binning", data=map_rule_result)

@@ -291,6 +291,30 @@ def cleaning_ui():
                             step=0.1,
                         ),
                     ),
+                    ui.accordion_panel(
+                        "8 · Value Filtering",
+                        ui.tags.small(
+                            "Drop rows where a specific column contains one or more exact values. "
+                            "Add multiple rules; uncheck any to disable it."
+                        ),
+                        ui.input_selectize(
+                            "filter_col",
+                            "Column to filter on",
+                            choices=[],
+                            multiple=False,
+                        ),
+                        ui.input_text(
+                            "filter_values",
+                            "Values to drop (comma-separated)",
+                            placeholder="e.g. Exempt, Unknown",
+                        ),
+                        ui.input_action_button(
+                            "add_filter_rule",
+                            "Add Rule",
+                            class_="btn btn-primary btn-sm mt-2",
+                        ),
+                        ui.output_ui("filter_rules_list"),
+                    ),
                     open=False,
                 ),
                 ui.hr(),
@@ -349,7 +373,7 @@ def cleaning_ui():
     )
 
 
-def apply_cleaning(df: pd.DataFrame, input) -> tuple[pd.DataFrame | None, list[str]]:
+def apply_cleaning(df: pd.DataFrame, input, filter_rules=None) -> tuple[pd.DataFrame | None, list[str]]:
     """
     Apply user-selected cleaning and preprocessing steps.
 
@@ -598,6 +622,45 @@ def apply_cleaning(df: pd.DataFrame, input) -> tuple[pd.DataFrame | None, list[s
                 )
     else:
         log.append("Outlier handling skipped.")
+
+    active_filter_rules = filter_rules or []
+    applied_any_filter = False
+
+    for i, rule in enumerate(active_filter_rules):
+        try:
+            enabled = bool(input[f"filter_rule_{i}"]())
+        except Exception:
+            enabled = True
+        if not enabled:
+            continue
+
+        col = rule["col"]
+        drop_vals = rule["values"]
+
+        if col in cleaned.columns:
+            before = len(cleaned)
+            cleaned = cleaned[~cleaned[col].astype(str).isin(drop_vals)].copy()
+            removed = before - len(cleaned)
+            log.append(
+                f"Dropped {removed} row(s) where '{col}' was in: {', '.join(sorted(drop_vals))}."
+            )
+            applied_any_filter = True
+
+    if not active_filter_rules:
+        log.append("Value filtering skipped.")
+
+    # Reconsider schema: coerce string columns that can parse entirely as numeric
+    recasted = []
+    for col in cleaned.select_dtypes(include=["object", "string"]).columns:
+        converted = pd.to_numeric(cleaned[col], errors="coerce")
+        original_notna = cleaned[col].notna()
+        if converted[original_notna].notna().all():
+            cleaned[col] = converted
+            recasted.append(col)
+    if recasted:
+        log.append(
+            f"Recast {len(recasted)} column(s) to numeric after cleaning: {', '.join(recasted)}."
+        )
 
     log.append(
         f"Final dataset shape: {cleaned.shape[0]:,} row(s) × {cleaned.shape[1]:,} column(s)."
