@@ -30,6 +30,7 @@ import json
 import re
 
 from shiny import module, ui, reactive, render, req
+import matplotlib.pyplot as plt
 import pandas as pd
 
 
@@ -71,6 +72,23 @@ def map_rule_ui():
                 ui.input_text("op_val_input", None, placeholder="—"),
             ),
             col_widths=[3, 2, 2, 5]
+        ),
+
+        ui.layout_columns(
+            ui.div(
+                ui.output_ui("hist_label"),
+                ui.output_plot("hist_preview"),
+            ),
+            ui.div(
+                ui.tags.label("Preview bins", {"class": "input-label"}),
+                ui.input_radio_buttons(
+                    "hist_bins", None,
+                    choices={"5": "5", "20": "20", "50": "50", "100": "100"},
+                    selected="20",
+                    inline=True,
+                ),
+            ),
+            col_widths=[6, 6],
         ),
 
         ui.layout_columns(
@@ -282,6 +300,29 @@ def map_rule_server(input, output, session, data):
             ],
         )
 
+    @output
+    @render.ui
+    def hist_label():
+        col = input.field_menu()
+        if col:
+            return ui.div("Field histogram")
+        return ui.div("A histogram of your selected field will be shown here.")
+
+    @output
+    @render.plot
+    def hist_preview():
+        df = data()
+        col = input.field_menu()
+        if df is None or not col or col not in df.columns:
+            return None
+        series = df[col].dropna()
+        bins = int(input.hist_bins())
+        fig, ax = plt.subplots()
+        ax.hist(series, bins=bins)
+        ax.set_xlabel(col)
+        ax.set_ylabel("Count")
+        return fig
+
     # Apply all enabled rules to df
     @reactive.calc
     def result() -> pd.DataFrame:
@@ -316,6 +357,22 @@ def binning_ui():
             ui.div(
                 ui.tags.label("Range", {"class": "input-label"}),
                 ui.output_ui("field_range"),
+            ),
+            col_widths=[6, 6],
+        ),
+        ui.layout_columns(
+            ui.div(
+                ui.output_ui("hist_label"),
+                ui.output_plot("hist_preview"),
+            ),
+            ui.div(
+                ui.tags.label("Preview bins", {"class": "input-label"}),
+                ui.input_radio_buttons(
+                    "hist_bins", None,
+                    choices={"5": "5", "20": "20", "50": "50", "100": "100"},
+                    selected="20",
+                    inline=True,
+                ),
             ),
             col_widths=[6, 6],
         ),
@@ -503,6 +560,29 @@ def binning_server(input, output, session, data):
                 for i in range(len(ops))
             ],
         )
+
+    @output
+    @render.ui
+    def hist_label():
+        col = input.field_menu()
+        if col:
+            return ui.div("Field histogram")
+        return ui.div("A histogram of your selected field will be shown here.")
+
+    @output
+    @render.plot
+    def hist_preview():
+        df = data()
+        col = input.field_menu()
+        if df is None or not col or col not in df.columns:
+            return None
+        series = df[col].dropna()
+        bins = int(input.hist_bins())
+        fig, ax = plt.subplots()
+        ax.hist(series, bins=bins)
+        ax.set_xlabel(col)
+        ax.set_ylabel("Count")
+        return fig
 
     # Apply all enabled rules to df
     @reactive.calc
