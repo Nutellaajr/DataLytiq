@@ -178,9 +178,91 @@ body {
     line-height: 1.4;
     word-break: break-word;
 }
+
+.info-section {
+    margin-top: 30px;
+}
+
+.info-section h2 {
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+
+.card {
+    border-radius: 12px;
+}
 """
 
 navbar_content = ui.page_navbar(
+    ui.nav_panel(
+        "Home",
+        ui.div(
+            {"class": "main-container"},
+        
+            ui.div(
+                {"class": "app-title-box"},
+                ui.h1({"class": "app-title"}, "DataLytiq"),
+                ui.p(
+                    {"class": "app-subtitle"},
+                    "A modern data application for transforming raw data into actionable insights."
+                ),
+            ),
+
+            ui.div(
+                {"class": "info-section"},
+                ui.h2("About DataLytiq"),
+                ui.p(
+                    "DataLytiq is an interactive data platform built with Python Shiny. "
+                    "It allows users to upload datasets, perform data cleaning, engineer features, "
+                    "and conduct exploratory data analysis through a seamless and intuitive interface."
+                ),
+            ),
+
+            ui.layout_columns(
+
+                ui.card(
+                    ui.card_header("📂 Data Upload"),
+                    ui.p("Import your own datasets in common formats such as CSV, Excel, and JSON, "
+                    "or start immediately with a built-in sample dataset. This makes the app "
+                     "easy to use for both real project data and quick demonstrations."),
+                ),
+
+                ui.card(
+                    ui.card_header("🧹 Data Cleaning"),
+                    ui.p("Prepare raw data for analysis by handling missing values, duplicates, "
+                    "inconsistencies, outliers, and formatting issues. The cleaning module is "
+                    "designed to help users create a more reliable and analysis-ready dataset."),
+                ),
+
+                ui.card(
+                    ui.card_header("⚙️ Feature Engineering"),
+                    ui.p("Create new variables and transform existing ones through mapping, binning, "
+                    "encoding, and other feature construction methods. This module helps users "
+                    "improve interpretability and generate features that better support analysis."),
+                ),
+
+                ui.card(
+                    ui.card_header("📊 Exploratory Analysis"),
+                    ui.p("Explore the structure of your data through summary tables, descriptive "
+                    "statistics, and interactive visual analysis. Users can inspect numerical "
+                    "patterns, categorical distributions, and relationships between variables."),
+                ),
+
+                col_widths=[3, 3, 3, 3],
+            ),
+
+            ui.div(
+                {"class": "info-section"},
+                ui.h2("How to Use"),
+                ui.tags.ol(
+                    ui.tags.li("Start by uploading a dataset in the Upload tab."),
+                    ui.tags.li("Clean and preprocess your data."),
+                    ui.tags.li("Create new features."),
+                    ui.tags.li("Explore your data through visualizations."),
+                ),
+            ),
+        )
+    ),
    
     ui.nav_panel(
         "Upload",
@@ -188,7 +270,7 @@ navbar_content = ui.page_navbar(
             {"class": "main-container"},
             ui.div(
                 {"class": "app-title-box"},
-                ui.div({"class": "app-title"}, "Project 2 Data App"),
+                ui.div({"class": "app-title"}, "DataLytiq"),
                 ui.p(
                     {"class": "app-subtitle"},
                     "An interactive data application for uploading, exploring, and transforming datasets."
@@ -236,7 +318,7 @@ navbar_content = ui.page_navbar(
         "EDA",
         eda_ui()
     ),
-    title="Project 2 Data App",
+    title="DataLytiq",
 )
 
 app_ui = ui.page_fluid(
