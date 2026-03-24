@@ -117,7 +117,6 @@ http://127.0.0.1:8000
 ---
 
 ## ⚠️ Notes
-- JSON files with nested structures (e.g., lists or dictionaries) may require preprocessing.
 - Large datasets may impact performance depending on system resources.
 ---
 
