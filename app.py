@@ -15,6 +15,8 @@ from modules.feature_engineering import (
     map_rule_ui, map_rule_server,
     binning_ui, binning_server,
     ohe_ui, ohe_server,
+    norm_ui, norm_server,
+    apply_all_fe_rules,
 )
 
 locate_col_js = """
@@ -302,6 +304,10 @@ navbar_content = ui.page_navbar(
                     "One-Hot Encoding",
                     ohe_ui("ohe"),
                 ),
+                ui.accordion_panel(
+                    "Log Transformation",
+                    norm_ui("norm"),
+                ),
                 open=True,
             ),
             ui.layout_columns(
@@ -417,9 +423,28 @@ def server(input, output, session):
         ui.update_selectize("outlier_cols", choices=numeric_cols, selected=[])
         ui.update_selectize("filter_col", choices=df.columns.tolist(), selected=[])
 
-    map_rule_result = map_rule_server("map_rule", data=cleaned_df)
-    binning_result = binning_server("binning", data=map_rule_result)
-    ohe_result = ohe_server("ohe", data=binning_result)
+    map_rules  = map_rule_server("map_rule", data=cleaned_df)
+    bin_rules  = binning_server("binning", data=cleaned_df)
+    ohe_fields = ohe_server("ohe", data=cleaned_df)
+    norm_ops   = norm_server("norm", data=cleaned_df)
+
+    curr_df: reactive.Value = reactive.Value(None)
+
+    @reactive.effect
+    def _build_curr_df():
+        df = dataset()
+        if df is None:
+            curr_df.set(None)
+            return
+
+        result = apply_cleaning(df, input, filter_rules=confirmed_filter_rules.get())
+        if result is None:
+            curr_df.set(None)
+            return
+        df, _ = result
+
+        df = apply_all_fe_rules(df, map_rules(), bin_rules(), ohe_fields(), norm_ops())
+        curr_df.set(df)
 
     eda_server(
         input=input,
@@ -427,13 +452,13 @@ def server(input, output, session):
         session=session,
         raw_data=dataset,
         cleaned_data=cleaned_df,
-        fe_data=ohe_result,
+        fe_data=curr_df, # TODO: All three df shall not be curr_df only. Just pass in curr_df=curr_df and use curr_df in modules/eda.py.
     )
 
     @output
     @render.data_frame
     def fe_preview():
-        df = ohe_result()
+        df = curr_df()
         if df is None:
             return None
         return df.head()

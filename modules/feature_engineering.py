@@ -29,7 +29,7 @@ If the data is int, it will convert to 13-20, 21-30, etc. If the data is double/
 import json
 import re
 
-from shiny import module, ui, reactive, render, req
+from shiny import module, ui, reactive, render
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -323,20 +323,12 @@ def map_rule_server(input, output, session, data):
         ax.set_ylabel("Count")
         return fig
 
-    # Apply all enabled rules to df
     @reactive.calc
-    def result() -> pd.DataFrame:
-        df = data()
-        req(df is not None)
-        df = df.copy()
-        for i, rule in enumerate(confirmed_rules.get()):
-            if not _checkbox_val(input, f"rule_{i}"):
-                continue
-            try:
-                df = _apply_map_rule(df, rule)
-            except Exception as e:
-                print(f"Rule '{rule['label']}' failed: {e}")
-        return df
+    def result() -> list:
+        return [
+            rule for i, rule in enumerate(confirmed_rules.get())
+            if _checkbox_val(input, f"rule_{i}")
+        ]
 
     return result
 
@@ -584,20 +576,12 @@ def binning_server(input, output, session, data):
         ax.set_ylabel("Count")
         return fig
 
-    # Apply all enabled rules to df
     @reactive.calc
-    def result() -> pd.DataFrame:
-        df = data()
-        req(df is not None)
-        df = df.copy()
-        for i, op in enumerate(confirmed_ops.get()):
-            if not _checkbox_val(input, f"rule_{i}"):
-                continue
-            try:
-                df = _apply_binning(df, op)
-            except Exception as e:
-                print(f"Binning on '{op['field']}' failed: {e}")
-        return df
+    def result() -> list:
+        return [
+            op for i, op in enumerate(confirmed_ops.get())
+            if _checkbox_val(input, f"rule_{i}")
+        ]
 
     return result
 
@@ -746,19 +730,249 @@ def ohe_server(input, output, session, data):
             ],
         )
 
-    # Apply all enabled fields to df
     @reactive.calc
-    def result() -> pd.DataFrame:
-        df = data()
-        req(df is not None)
-        df = df.copy()
-        for i, entry in enumerate(confirmed_fields.get()):
-            if not _checkbox_val(input, f"rule_{i}"):
-                continue
-            try:
-                df = _apply_ohe(df, entry["field"])
-            except Exception as e:
-                print(f"OHE on '{entry['field']}' failed: {e}")
-        return df
+    def result() -> list:
+        return [
+            entry for i, entry in enumerate(confirmed_fields.get())
+            if _checkbox_val(input, f"rule_{i}")
+        ]
 
     return result
+
+
+# -------------------- LOG TRANSFORMATION --------------------
+
+# -------------------- UI --------------------
+
+@module.ui
+def norm_ui():
+    return ui.div(
+        {"class": "norm-card"},
+        ui.layout_columns(
+            ui.div(
+                ui.tags.label("Field", {"class": "input-label"}),
+                ui.input_selectize("field_menu", None, choices=[], multiple=False),
+            ),
+            ui.div(
+                ui.tags.label("New field name", {"class": "input-label"}),
+                ui.input_text("new_field_input", None, placeholder="e.g. income_log2"),
+            ),
+            col_widths=[6, 6],
+        ),
+        ui.output_ui("hist_section"),
+        ui.layout_columns(
+            ui.input_action_button("add_norm", "Apply Log Transformation",
+                                   class_="btn btn-primary mt-2"),
+            col_widths=[6],
+        ),
+        ui.output_ui("norm_validation_msg"),
+        ui.output_ui("rules_list"),
+    )
+
+
+# -------------------- Helpers --------------------
+
+import numpy as np
+
+
+def _apply_log_transform(df: pd.DataFrame, op: dict) -> pd.DataFrame:
+    df[op["new_col"]] = np.log2(df[op["field"]])
+    return df
+
+
+# -------------------- Server --------------------
+
+@module.server
+def norm_server(input, output, session, data):
+    confirmed_ops: reactive.Value[list] = reactive.Value([])
+    error_msg: reactive.Value[str] = reactive.Value("")
+
+    # Populate numeric columns
+    @reactive.effect
+    def _update_fields():
+        df = data()
+        if df is None:
+            ui.update_select("field_menu", choices=[], selected=None, session=session)
+            return
+        num_cols = df.select_dtypes(include="number").columns.tolist()
+        ui.update_select(
+            "field_menu",
+            choices={"": "— select a field —", **{c: c for c in num_cols}},
+            selected="",
+            session=session,
+        )
+
+    @output
+    @render.ui
+    def hist_section():
+        col = input.field_menu()
+        if not col:
+            return ui.div()
+        return ui.layout_columns(
+            ui.div(
+                ui.tags.label("Original", {"class": "input-label"}),
+                ui.output_plot("hist_original"),
+            ),
+            ui.div(
+                ui.tags.label("Log transformation preview", {"class": "input-label"}),
+                ui.output_plot("hist_transformed"),
+            ),
+            ui.div(
+                ui.tags.label("Preview bins", {"class": "input-label"}),
+                ui.input_radio_buttons(
+                    "hist_bins", None,
+                    choices={"5": "5", "20": "20", "50": "50", "100": "100"},
+                    selected="20",
+                    inline=True,
+                ),
+            ),
+            col_widths=[4, 4, 4],
+        )
+
+    @output
+    @render.plot
+    def hist_original():
+        df  = data()
+        col = input.field_menu()
+        if df is None or not col or col not in df.columns:
+            return None
+        series = df[col].dropna()
+        bins   = int(input.hist_bins())
+        fig, ax = plt.subplots()
+        ax.hist(series, bins=bins)
+        ax.set_xlabel(col)
+        ax.set_ylabel("Count")
+        return fig
+
+    @output
+    @render.plot
+    def hist_transformed():
+        df  = data()
+        col = input.field_menu()
+        if df is None or not col or col not in df.columns:
+            return None
+        series      = df[col].dropna()
+        transformed = np.log2(series).replace([np.inf, -np.inf], np.nan).dropna()
+        bins        = int(input.hist_bins())
+        fig, ax     = plt.subplots()
+        ax.hist(transformed, bins=bins, color="steelblue")
+        ax.set_xlabel(f"{col} (log₂)")
+        ax.set_ylabel("Count")
+        return fig
+
+    # Validate and record operation
+    @reactive.effect
+    @reactive.event(input.add_norm)
+    def _on_add():
+        error_msg.set("")
+        df      = data()
+        col     = input.field_menu()
+        new_col = input.new_field_input().strip()
+
+        if df is None:
+            error_msg.set("No dataset loaded.")
+            return
+        if not col:
+            error_msg.set("Please select a field.")
+            return
+        if not new_col:
+            error_msg.set("New field name cannot be empty.")
+            return
+        if not re.fullmatch(r"[A-Za-z0-9_]+", new_col):
+            error_msg.set("New field name may only contain letters, digits, and underscores.")
+            return
+        if any(op["new_col"] == new_col for op in confirmed_ops.get()):
+            error_msg.set(f"A rule writing to '{new_col}' already exists.")
+            return
+        if df is not None and col in df.columns and (df[col].dropna() <= 0).any():
+            error_msg.set(f"'{col}' contains values ≤ 0. log₂ is undefined for non-positive values.")
+            return
+
+        confirmed_ops.set(confirmed_ops.get() + [{
+            "field":   col,
+            "new_col": new_col,
+            "label":   f"{col} → {new_col} (log₂)",
+        }])
+
+    @output
+    @render.ui
+    def norm_validation_msg():
+        msg = error_msg.get()
+        if not msg:
+            return ui.div()
+        return ui.div(
+            {"style": "color: var(--bs-danger); font-size: 12px; margin-top: 6px;"},
+            f"Error: {msg}"
+        )
+
+    @output
+    @render.ui
+    def rules_list():
+        ops = confirmed_ops.get()
+        if not ops:
+            return ui.div()
+        return ui.div(
+            {"style": "margin-top: 10px; width: 100%;"},
+            ui.tags.label("Applied Rules", {"class": "input-label"}),
+            *[
+                ui.div(
+                    {"style": "display: flex; align-items: center; gap: 8px; width: 100%;"},
+                    ui.div(
+                        {"style": "flex: 1; min-width: 0;"},
+                        ui.input_checkbox(f"rule_{i}", ops[i]["label"], value=True),
+                    ),
+                    ui.tags.button(
+                        "Locate",
+                        {
+                            "data-col": ops[i]["new_col"],
+                            "onclick": "locateColumn(this.dataset.col)",
+                            "class": "btn btn-sm btn-outline-secondary",
+                            "style": "flex-shrink: 0; font-size: 11px; padding: 2px 8px;",
+                        },
+                    ),
+                )
+                for i in range(len(ops))
+            ],
+        )
+
+    @reactive.calc
+    def result() -> list:
+        return [
+            op for i, op in enumerate(confirmed_ops.get())
+            if _checkbox_val(input, f"rule_{i}")
+        ]
+
+    return result
+
+
+# -------------------- APPLY ALL FE RULES --------------------
+
+def apply_all_fe_rules(
+    df: pd.DataFrame,
+    map_rules: list,
+    bin_rules: list,
+    ohe_fields: list,
+    norm_ops: list = None,
+) -> pd.DataFrame:
+    df = df.copy()
+    for rule in map_rules:
+        try:
+            df = _apply_map_rule(df, rule)
+        except Exception as e:
+            print(f"Map rule '{rule.get('label', '')}' failed: {e}")
+    for op in bin_rules:
+        try:
+            df = _apply_binning(df, op)
+        except Exception as e:
+            print(f"Binning on '{op.get('field', '')}' failed: {e}")
+    for entry in ohe_fields:
+        try:
+            df = _apply_ohe(df, entry["field"])
+        except Exception as e:
+            print(f"OHE on '{entry.get('field', '')}' failed: {e}")
+    for op in (norm_ops or []):
+        try:
+            df = _apply_log_transform(df, op)
+        except Exception as e:
+            print(f"Log transform on '{op.get('field', '')}' failed: {e}")
+    return df
