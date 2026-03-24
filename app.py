@@ -193,6 +193,13 @@ body {
 .card {
     border-radius: 12px;
 }
+.eda-filter-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 8px;
+}
+
 """
 
 navbar_content = ui.page_navbar(
