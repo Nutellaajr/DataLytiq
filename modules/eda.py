@@ -1462,6 +1462,8 @@ def eda_server(input, output, session, raw_data, cleaned_data, fe_data):
                 f"summary_numvar_{col}",
                 value=False,
                 session=session,
+
+                
             )
         
     
