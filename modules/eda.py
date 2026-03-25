@@ -1192,7 +1192,7 @@ def eda_server(input, output, session, raw_data, cleaned_data, fe_data):
                 ui.div(
                     ui.h4("EDA Module Guide"),
                     ui.p(
-                        "This EDA module helps users explore the feature-engineered dataset through "
+                        "This EDA module helps users explore the current working dataset through "
                         "summary tables, visualizations, and correlation analysis."
                     ),
 
@@ -1264,7 +1264,7 @@ def eda_server(input, output, session, raw_data, cleaned_data, fe_data):
 
                     ui.h5("General Tips"),
                     ui.tags.ul(
-                        ui.tags.li("All EDA results are based on the current feature-engineered dataset."),
+                        ui.tags.li("All EDA results are based on the current working dataset, which reflects the latest available data in the workflow."),
                         ui.tags.li("Filters affect the rows used in tables and plots."),
                         
                         ui.tags.li("Start with summary tabs, then move to visualization and correlation for deeper analysis."),
@@ -1638,10 +1638,10 @@ def eda_server(input, output, session, raw_data, cleaned_data, fe_data):
         filtered_df = filtered_eda_df()
 
         if df is None:
-            return "Feature Engineered Data is not available yet."
+            return "Current working data is not available yet."
 
         return (
-            f"Dataset in use: Feature Engineered Data | "
+            f"Dataset in use: Current Working Data | "
             f"Rows before filter: {df.shape[0]:,} | "
             f"Rows after filter: {filtered_df.shape[0]:,}"
         )
@@ -1819,13 +1819,13 @@ def eda_server(input, output, session, raw_data, cleaned_data, fe_data):
         n_categories = categorical_unique_count()
 
         if df is None:
-            return "Feature Engineered Data is not available yet."
+            return "Current working data is not available yet."
 
         if selected_col is None:
-            return "Dataset in use: Feature Engineered Data | No categorical variable selected."
+            return "Dataset in use: Current Working Data | No categorical variable selected."
 
         return (
-            f"Dataset in use: Feature Engineered Data | "
+            f"Dataset in use: Current Working Data | "
             f"Variable: {selected_col} | "
             f"Categories: {n_categories:,} | "
             f"Rows: {df.shape[0]:,}"
@@ -2259,7 +2259,7 @@ def eda_server(input, output, session, raw_data, cleaned_data, fe_data):
         plot_type = input.visualization_plot_type()
 
         if df is None:
-            return "Feature Engineered Data is not available yet."
+            return "Current working data is not available yet."
 
         plot_label = {
             "": "None",
@@ -2271,7 +2271,7 @@ def eda_server(input, output, session, raw_data, cleaned_data, fe_data):
         }.get(plot_type or "", "None")
 
         return (
-            f"Dataset in use: Feature Engineered Data | "
+            f"Dataset in use: Current Working Data | "
             f"Plot type: {plot_label} | "
             f"Rows before filter: {df.shape[0]:,} | "
             f"Rows after filter: {filtered_df.shape[0]:,}"
@@ -2539,7 +2539,7 @@ def eda_server(input, output, session, raw_data, cleaned_data, fe_data):
         filter_vars = list(input.correlation_filter_vars() or [])
 
         if df is None:
-            return "Feature Engineered Data is not available yet."
+            return "Current working data is not available yet."
 
         plot_label = {
             "": "None",
@@ -2554,7 +2554,7 @@ def eda_server(input, output, session, raw_data, cleaned_data, fe_data):
             extra_note = " | Select at most 6 numeric variables for readability."
 
         return (
-            f"Dataset in use: Feature Engineered Data | "
+            f"Dataset in use: Current Working Data | "
             f"Plot type: {plot_label} | "
             f"Numeric variables selected: {len(numeric_vars)} | "
             f"Filter variables: {len(filter_vars)} | "
