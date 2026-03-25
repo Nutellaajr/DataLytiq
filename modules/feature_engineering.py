@@ -28,6 +28,7 @@ If the data is int, it will convert to 13-20, 21-30, etc. If the data is double/
 
 import json
 import re
+import uuid
 
 from shiny import module, ui, reactive, render
 import matplotlib.pyplot as plt
@@ -234,6 +235,7 @@ def map_rule_server(input, output, session, data):
         true_value = _parse_value(raw_out)
 
         rule = {
+            "id":        str(uuid.uuid4()).replace("-", "_"),
             "field":     field,
             "operator":  operator,
             "threshold": threshold,
@@ -254,6 +256,12 @@ def map_rule_server(input, output, session, data):
             f"Error: {msg}"
         )
 
+    @reactive.effect
+    @reactive.event(input.delete_id)
+    def _on_delete():
+        rid = input.delete_id()
+        confirmed_rules.set([r for r in confirmed_rules.get() if r["id"] != rid])
+
     # Render applied rules
     @output
     @render.ui
@@ -261,6 +269,7 @@ def map_rule_server(input, output, session, data):
         rules = confirmed_rules.get()
         if not rules:
             return ui.div()
+        ns_delete = session.ns("delete_id")
         return ui.div(
             {"style": "margin-top: 10px; width: 100%;"},
             ui.tags.label("Applied Rules", {"class": "input-label"}),
@@ -269,19 +278,28 @@ def map_rule_server(input, output, session, data):
                     {"style": "display: flex; align-items: center; gap: 8px; width: 100%;"},
                     ui.div(
                         {"style": "flex: 1; min-width: 0;"},
-                        ui.input_checkbox(f"rule_{i}", rules[i]["label"], value=True),
+                        ui.input_checkbox(f"rule_{rule['id']}", rule["label"], value=_checkbox_val(input, f"rule_{rule['id']}", default=True)),
                     ),
                     ui.tags.button(
                         "Locate",
                         {
-                            "data-col": rules[i]["new_field"],
+                            "data-col": rule["new_field"],
                             "onclick": "locateColumn(this.dataset.col)",
                             "class": "btn btn-sm btn-outline-secondary",
                             "style": "flex-shrink: 0; font-size: 11px; padding: 2px 8px;",
                         },
                     ),
+                    ui.tags.button(
+                        "×",
+                        {
+                            "onclick": f"Shiny.setInputValue('{ns_delete}', '{rule['id']}', {{priority: 'event'}})",
+                            "class": "btn btn-sm btn-outline-danger",
+                            "style": "flex-shrink: 0; font-size: 11px; padding: 2px 6px;",
+                            "title": "Delete rule",
+                        },
+                    ),
                 )
-                for i in range(len(rules))
+                for rule in rules
             ],
         )
 
@@ -326,8 +344,8 @@ def map_rule_server(input, output, session, data):
     @reactive.calc
     def result() -> list:
         return [
-            rule for i, rule in enumerate(confirmed_rules.get())
-            if _checkbox_val(input, f"rule_{i}")
+            rule for rule in confirmed_rules.get()
+            if _checkbox_val(input, f"rule_{rule['id']}")
         ]
 
     return result
@@ -489,6 +507,7 @@ def binning_server(input, output, session, data):
         labels = _make_bin_labels(edges, is_int)
 
         confirmed_ops.set(confirmed_ops.get() + [{
+            "id":      str(uuid.uuid4()).replace("-", "_"),
             "field":   col,
             "edges":   edges,
             "labels":  labels,
@@ -507,6 +526,12 @@ def binning_server(input, output, session, data):
             f"Error: {msg}"
         )
 
+    @reactive.effect
+    @reactive.event(input.delete_id)
+    def _on_delete():
+        rid = input.delete_id()
+        confirmed_ops.set([op for op in confirmed_ops.get() if op["id"] != rid])
+
     # Render applied rules
     @output
     @render.ui
@@ -514,6 +539,7 @@ def binning_server(input, output, session, data):
         ops = confirmed_ops.get()
         if not ops:
             return ui.div()
+        ns_delete = session.ns("delete_id")
         return ui.div(
             {"style": "margin-top: 10px; width: 100%;"},
             ui.tags.label("Applied Rules", {"class": "input-label"}),
@@ -522,19 +548,28 @@ def binning_server(input, output, session, data):
                     {"style": "display: flex; align-items: center; gap: 8px; width: 100%;"},
                     ui.div(
                         {"style": "flex: 1; min-width: 0;"},
-                        ui.input_checkbox(f"rule_{i}", ops[i]["label"], value=True),
+                        ui.input_checkbox(f"rule_{op['id']}", op["label"], value=_checkbox_val(input, f"rule_{op['id']}", default=True)),
                     ),
                     ui.tags.button(
                         "Locate",
                         {
-                            "data-col": ops[i]["new_col"],
+                            "data-col": op["new_col"],
                             "onclick": "locateColumn(this.dataset.col)",
                             "class": "btn btn-sm btn-outline-secondary",
                             "style": "flex-shrink: 0; font-size: 11px; padding: 2px 8px;",
                         },
                     ),
+                    ui.tags.button(
+                        "×",
+                        {
+                            "onclick": f"Shiny.setInputValue('{ns_delete}', '{op['id']}', {{priority: 'event'}})",
+                            "class": "btn btn-sm btn-outline-danger",
+                            "style": "flex-shrink: 0; font-size: 11px; padding: 2px 6px;",
+                            "title": "Delete rule",
+                        },
+                    ),
                 )
-                for i in range(len(ops))
+                for op in ops
             ],
         )
 
@@ -579,8 +614,8 @@ def binning_server(input, output, session, data):
     @reactive.calc
     def result() -> list:
         return [
-            op for i, op in enumerate(confirmed_ops.get())
-            if _checkbox_val(input, f"rule_{i}")
+            op for op in confirmed_ops.get()
+            if _checkbox_val(input, f"rule_{op['id']}")
         ]
 
     return result
@@ -686,7 +721,7 @@ def ohe_server(input, output, session, data):
                 safe = re.sub(r"[^\w]+", "_", str(val).strip().lower()).strip("_")
                 cols.append(f"{field}_is_{safe}")
 
-        confirmed_fields.set(confirmed_fields.get() + [{"field": field, "cols": cols}])
+        confirmed_fields.set(confirmed_fields.get() + [{"id": str(uuid.uuid4()).replace("-", "_"), "field": field, "cols": cols}])
 
     @output
     @render.ui
@@ -699,6 +734,12 @@ def ohe_server(input, output, session, data):
             f"Error: {msg}"
         )
 
+    @reactive.effect
+    @reactive.event(input.delete_id)
+    def _on_delete():
+        rid = input.delete_id()
+        confirmed_fields.set([f for f in confirmed_fields.get() if f["id"] != rid])
+
     # 4. Render applied fields
     @output
     @render.ui
@@ -706,6 +747,7 @@ def ohe_server(input, output, session, data):
         fields = confirmed_fields.get()
         if not fields:
             return ui.div()
+        ns_delete = session.ns("delete_id")
         return ui.div(
             {"style": "margin-top: 10px; width: 100%;"},
             ui.tags.label("Applied Rules", {"class": "input-label"}),
@@ -714,33 +756,44 @@ def ohe_server(input, output, session, data):
                     {"style": "display: flex; align-items: center; gap: 8px; width: 100%;"},
                     ui.div(
                         {"style": "flex: 1; min-width: 0;"},
-                        ui.input_checkbox(f"rule_{i}", f"One-hot encode: {fields[i]['field']}", value=True),
+                        ui.input_checkbox(f"rule_{entry['id']}", f"One-hot encode: {entry['field']}", value=_checkbox_val(input, f"rule_{entry['id']}", default=True)),
                     ),
                     ui.tags.button(
                         "Locate",
                         {
-                            "data-cols": json.dumps(fields[i]["cols"]),
+                            "data-cols": json.dumps(entry["cols"]),
                             "onclick": "locateColumns(JSON.parse(this.dataset.cols))",
                             "class": "btn btn-sm btn-outline-secondary",
                             "style": "flex-shrink: 0; font-size: 11px; padding: 2px 8px;",
                         },
                     ),
+                    ui.tags.button(
+                        "×",
+                        {
+                            "onclick": f"Shiny.setInputValue('{ns_delete}', '{entry['id']}', {{priority: 'event'}})",
+                            "class": "btn btn-sm btn-outline-danger",
+                            "style": "flex-shrink: 0; font-size: 11px; padding: 2px 6px;",
+                            "title": "Delete rule",
+                        },
+                    ),
                 )
-                for i in range(len(fields))
+                for entry in fields
             ],
         )
 
     @reactive.calc
     def result() -> list:
         return [
-            entry for i, entry in enumerate(confirmed_fields.get())
-            if _checkbox_val(input, f"rule_{i}")
+            entry for entry in confirmed_fields.get()
+            if _checkbox_val(input, f"rule_{entry['id']}")
         ]
 
     return result
 
 
 # -------------------- LOG TRANSFORMATION --------------------
+# Note: I accidentially named all elements of this section related to "norm" instead of "log".
+# Please be aware of this in future edits.
 
 # -------------------- UI --------------------
 
@@ -889,6 +942,7 @@ def norm_server(input, output, session, data):
             return
 
         confirmed_ops.set(confirmed_ops.get() + [{
+            "id":      str(uuid.uuid4()).replace("-", "_"),
             "field":   col,
             "new_col": new_col,
             "label":   f"{col} → {new_col} (log₂)",
@@ -905,12 +959,19 @@ def norm_server(input, output, session, data):
             f"Error: {msg}"
         )
 
+    @reactive.effect
+    @reactive.event(input.delete_id)
+    def _on_delete():
+        rid = input.delete_id()
+        confirmed_ops.set([op for op in confirmed_ops.get() if op["id"] != rid])
+
     @output
     @render.ui
     def rules_list():
         ops = confirmed_ops.get()
         if not ops:
             return ui.div()
+        ns_delete = session.ns("delete_id")
         return ui.div(
             {"style": "margin-top: 10px; width: 100%;"},
             ui.tags.label("Applied Rules", {"class": "input-label"}),
@@ -919,27 +980,36 @@ def norm_server(input, output, session, data):
                     {"style": "display: flex; align-items: center; gap: 8px; width: 100%;"},
                     ui.div(
                         {"style": "flex: 1; min-width: 0;"},
-                        ui.input_checkbox(f"rule_{i}", ops[i]["label"], value=True),
+                        ui.input_checkbox(f"rule_{op['id']}", op["label"], value=_checkbox_val(input, f"rule_{op['id']}", default=True)),
                     ),
                     ui.tags.button(
                         "Locate",
                         {
-                            "data-col": ops[i]["new_col"],
+                            "data-col": op["new_col"],
                             "onclick": "locateColumn(this.dataset.col)",
                             "class": "btn btn-sm btn-outline-secondary",
                             "style": "flex-shrink: 0; font-size: 11px; padding: 2px 8px;",
                         },
                     ),
+                    ui.tags.button(
+                        "×",
+                        {
+                            "onclick": f"Shiny.setInputValue('{ns_delete}', '{op['id']}', {{priority: 'event'}})",
+                            "class": "btn btn-sm btn-outline-danger",
+                            "style": "flex-shrink: 0; font-size: 11px; padding: 2px 6px;",
+                            "title": "Delete rule",
+                        },
+                    ),
                 )
-                for i in range(len(ops))
+                for op in ops
             ],
         )
 
     @reactive.calc
     def result() -> list:
         return [
-            op for i, op in enumerate(confirmed_ops.get())
-            if _checkbox_val(input, f"rule_{i}")
+            op for op in confirmed_ops.get()
+            if _checkbox_val(input, f"rule_{op['id']}")
         ]
 
     return result
