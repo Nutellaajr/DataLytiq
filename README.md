@@ -85,7 +85,7 @@ pip install shiny pandas numpy matplotlib seaborn
 ### 🌐 Option 1: Use Online (Recommended)
 Access the deployed application directly in your browser:
 
-👉 https://yourname.shinyapps.io/DataLytiq
+👉 https://y1ouyang.shinyapps.io/stats-5243-project-2/
 
 
 
